@@ -16,7 +16,7 @@ import crypto from 'node:crypto';
 const out = process.argv[2] || 'z2m_bundle_out';
 fs.mkdirSync(out,{recursive:true});
 
-const mod = await import('zigbee-herdsman-converters/devices/index.js');
+const mod = await import('zigbee-herdsman-converters/devices/index');
 const defs = mod.default || mod.definitions || [];
 
 function exposeType(x){ return x?.type || x?.name || ''; }
