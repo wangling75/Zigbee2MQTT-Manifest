@@ -20,7 +20,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -29,8 +28,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm install --no-audit --no-fund
-          npm install --no-save zigbee-herdsman-converters@latest
+          npm install --no-audit --no-fund --ignore-scripts
 
       - name: Show converter version
         run: |
@@ -40,6 +38,7 @@ jobs:
         run: |
           rm -rf build_ir dist
           mkdir -p build_ir dist
+
           node tools/z2m_bundle_generator.mjs build_ir
 
           if [ -d "data/converters" ]; then
@@ -50,20 +49,34 @@ jobs:
       - name: Validate generated IR
         run: |
           test -s build_ir/z2m_bundle.ndjson
-          echo "IR lines: $(wc -l < build_ir/z2m_bundle.ndjson)"
-          echo "IR bytes: $(wc -c < build_ir/z2m_bundle.ndjson)"
+
+          echo "IR lines:"
+          wc -l build_ir/z2m_bundle.ndjson
+
+          echo "IR bytes:"
+          wc -c build_ir/z2m_bundle.ndjson
 
       - name: Build binary bundle
         run: |
-          python3 tools/build_z2m_binary.py build_ir dist
+          python3 tools/z2m_binary_compiler.py \
+            build_ir \
+            dist/z2m_bundle.bin \
+            dist/z2m_manifest.json
 
       - name: Verify binary bundle
         run: |
-          python3 tools/verify_z2m_bundle.py dist
+          python3 tools/verify_z2m_bundle.py \
+            dist/z2m_bundle.bin \
+            dist/z2m_manifest.json \
+            build_ir/z2m_index.json
 
       - name: Generate checksums
         run: |
-          sha256sum dist/* > dist/SHA256SUMS
+          sha256sum \
+            dist/z2m_bundle.bin \
+            dist/z2m_manifest.json \
+            > dist/SHA256SUMS
+
           cat dist/SHA256SUMS
 
       - name: Read converter version
@@ -92,3 +105,5 @@ jobs:
             dist/z2m_bundle.bin
             dist/z2m_manifest.json
             dist/SHA256SUMS
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
