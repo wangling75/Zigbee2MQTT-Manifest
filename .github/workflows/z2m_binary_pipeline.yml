@@ -1,4 +1,4 @@
-name: ⚡ Z2M Binary Bundle CI/CD Pipeline
+name: ⚡ Z2M Binary Bundle v3.0 CI/CD Pipeline
 
 on:
   schedule:
@@ -8,8 +8,10 @@ on:
     branches: [ main, master ]
     paths:
       - "tools/**"
+      - "esp32_runtime/**"
       - "data/converters/**"
       - ".github/workflows/z2m_binary_pipeline.yml"
+      - "package.json"
   workflow_dispatch: # 支持在 GitHub 网页一键手动触发
 
 permissions:
@@ -28,40 +30,54 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: 'npm'
 
       - name: 🐍 配置 Python 3.11 环境
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: 📦 获取最新官方 zigbee-herdsman-converters
+      - name: 📦 安装 Node.js 依赖
         run: |
+          npm install
           npm install zigbee-herdsman-converters@latest
-          ZHC_VER=$(node -p "require('zigbee-herdsman-converters/package.json').version")
+          ZHC_VER=$(node --input-type=module -e "import pkg from 'zigbee-herdsman-converters/package.json' with { type: 'json' }; console.log(pkg.version);")
           echo "ZHC_VERSION=${ZHC_VER}" >> $GITHUB_ENV
           echo "Upstream zigbee-herdsman-converters version: ${ZHC_VER}"
 
-      - name: ⚙️ 阶段一：提取 Z2M 声明式中间元数据 (IR)
+      - name: ✅ 验证依赖完整性
+        run: |
+          test -f node_modules/zigbee-herdsman-converters/dist/devices/index.js && \
+            echo "✓ zigbee-herdsman-converters 核心模块已就位" || \
+            (echo "✗ 依赖未找到，请检查 npm install" && exit 1)
+          node --input-type=module -e "import devMod from 'zigbee-herdsman-converters/devices/index'; const defs = devMod.default?.default || devMod.default || []; console.log('Total definitions ready to compile:', defs.length);"
+
+      - name: ⚙️ 阶段一：提取 Z2M 声明式中间元数据 (IR v3)
         run: |
           mkdir -p build_ir dist
-          # 运行抽取脚本，支持内置自定义转换器合并
-          node tools/z2m_bundle_generator.mjs build_ir
+          # 运行抽取脚本 (调用官方 prepareDefinition 展开 modernExtend、fingerprint 与 Tuya DP)
+          npm run build:ir
           # 拷贝本地私有转换器至中间目录
           if [ -d "data/converters" ]; then
             mkdir -p build_ir/converters
             cp -r data/converters/* build_ir/converters/ || true
           fi
+          # 验证 IR 输出
+          ls -lh build_ir/
+          test -f build_ir/z2m_bundle.ndjson && echo "✓ IR bundle generated" || (echo "✗ IR generation failed" && exit 1)
 
-      - name: 🔨 阶段二：离线编译为定长索引 Zero-RAM Binary Bundle
+      - name: 🔨 阶段二：离线编译为定长双哈希索引 Zero-RAM Binary Bundle v3
         run: |
-          python3 tools/z2m_binary_compiler.py build_ir dist/z2m_bundle.bin dist/z2m_manifest.json
+          npm run build:bundle
+          test -f dist/z2m_bundle.bin && echo "✓ Binary bundle v3 compiled" || (echo "✗ Binary compilation failed" && exit 1)
 
-      - name: 🧪 阶段三：自动化二分查找检索与校验套件 (Verification Suite)
+      - name: 🧪 阶段三：Python 二分查找与哈希完整性校验套件
         run: |
           python3 - << 'EOF'
           import os
           import struct
           import hashlib
+          import json
 
           def fnv1a_32(text: str) -> int:
               h = 0x811C9DC5
@@ -74,25 +90,26 @@ jobs:
           assert os.path.exists(bin_path), "Bundle binary missing!"
 
           with open(bin_path, "rb") as f:
-              header = f.read(64)
-              magic, ver, dev_count, idx_off, data_off, str_off, total_sz, sha256_raw = struct.unpack("<4sHIIIII32s", header)
+              header = f.read(128)
+              magic, ver, ir_ver, dev_count, m_off, m_cnt, fp_off, fp_cnt, rec_off, str_off, total_sz, crc, sha256_raw = struct.unpack("<4sHHIIIIIIIII32s", header[:76])
               assert magic == b"Z2MB", f"Invalid magic: {magic}"
-              assert ver == 1, f"Unsupported version: {ver}"
-              print(f"[CI Test] Binary Verified: {dev_count} devices, total size {total_sz} bytes")
+              assert ver == 3, f"Unsupported version: {ver}"
+              assert ir_ver == 3, f"Unsupported IR version: {ir_ver}"
+              print(f"[CI Test] Binary Header Verified: {dev_count} devices, {m_cnt} models, {fp_cnt} fingerprints, total size {total_sz} bytes")
 
               # Test probe typical device models
-              test_models = ["TS0201", "TS0207", "TS0203", "TS0601", "SNZB-02P", "BASICZBR3", "lumi.sensor_motion"]
+              test_models = ["TS0201", "SNZB-02P", "ZBMINI", "ZWSH16"]
               for target in test_models:
                   target_hash = fnv1a_32(target)
-                  low, high = 0, dev_count - 1
+                  low, high = 0, m_cnt - 1
                   found = False
                   seeks = 0
                   while low <= high:
                       mid = (low + high) // 2
-                      f.seek(idx_off + mid * 32)
+                      f.seek(m_off + mid * 32)
                       seeks += 1
                       entry = f.read(32)
-                      m_hash, mfg_hash, rec_start, rec_len, cat_enum, flags, exp_count = struct.unpack("<IIIIHHH", entry[:22])
+                      m_hash, v_hash, r_start, r_len, cat_enum, flags, fz_c, tz_c, dp_c, ep_c, extra = struct.unpack("<IIIIHHBBBBQ", entry)
                       if m_hash == target_hash:
                           found = True
                           break
@@ -100,26 +117,34 @@ jobs:
                           low = mid + 1
                       else:
                           high = mid - 1
-                  if found:
-                      print(f"[CI Test] Binary search verified: {target} resolved in {seeks} seeks.")
-                  else:
-                      print(f"[CI Test] Note: model {target} not in upstream subset, binary search ok.")
+                  assert found, f"Model {target} not resolved by binary search!"
+                  print(f"[CI Test] Binary search verified: {target} resolved in {seeks} seeks.")
 
           # Validate manifest
-          import json
           with open("dist/z2m_manifest.json", "r") as mf:
               mdata = json.load(mf)
-              assert "min_firmware" in mdata, "Missing min_firmware in manifest!"
-              assert "ir_version" in mdata, "Missing ir_version in manifest!"
-              assert mdata["sha256"], "Missing sha256 in manifest!"
-              print(f"[CI Test] Manifest schema verified: min_firmware={mdata['min_firmware']}, ir_version={mdata['ir_version']}")
+              assert mdata["format"] == "z2m-binary-bundle-v3"
+              assert mdata["ir_version"] == 3
+              assert mdata["sha256"]
+              print(f"[CI Test] Manifest schema verified: ir_version={mdata['ir_version']}, sha256={mdata['sha256']}")
           EOF
+
+      - name: 🔬 阶段四：ESP32 C++ Converter Runtime 自动化集成测试
+        run: |
+          g++ -std=c++17 -O2 -Iesp32_runtime/include -Iesp32_runtime/src \
+            esp32_runtime/src/*.cpp \
+            esp32_runtime/tests/test_runtime.cpp \
+            -o dist/test_runtime
+          ./dist/test_runtime dist/z2m_bundle.bin
+          echo "✓ ESP32 C++ Runtime verified against generated binary bundle"
 
       - name: 📤 上传构建产物 (Artifacts)
         uses: actions/upload-artifact@v4
         with:
-          name: z2m-binary-bundle
-          path: dist/*
+          name: z2m-binary-bundle-v3
+          path: |
+            dist/z2m_bundle.bin
+            dist/z2m_manifest.json
 
       - name: 🚀 发布 Release 资产 (GitHub Release)
         if: github.event_name != 'pull_request'
