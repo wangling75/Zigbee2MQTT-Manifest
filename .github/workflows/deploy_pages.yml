@@ -1,0 +1,48 @@
+name: Deploy Manifest Pages
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - "public/**"
+      - ".github/workflows/deploy_pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: z2m-manifest-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate published bundle
+        run: |
+          set -euo pipefail
+          python3 tools/validate_bundle.py \
+            public/z2m_bundle.bin public/z2m_manifest.json
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
