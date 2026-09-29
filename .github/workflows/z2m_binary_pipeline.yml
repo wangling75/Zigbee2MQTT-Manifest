@@ -140,6 +140,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
@@ -150,6 +156,9 @@ jobs:
         with:
           name: z2m-candidate-${{ needs.validate.outputs.zhc_version }}
           path: .
+
+      - name: Install candidate dependencies
+        run: npm ci
 
       - name: Read candidate version
         id: candidate
