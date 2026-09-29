@@ -30,6 +30,11 @@ on:
         required: false
         default: true
         type: boolean
+      force_release:
+        description: "Publish or update the GitHub Release even when the bundle is unchanged"
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: write
@@ -47,6 +52,7 @@ jobs:
       zhc_version: ${{ steps.deps.outputs.zhc_version }}
       bundle_changed: ${{ steps.candidate.outputs.bundle_changed }}
       bundle_sha256: ${{ steps.candidate.outputs.bundle_sha256 }}
+      should_publish: ${{ steps.candidate.outputs.should_publish }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -99,12 +105,19 @@ jobs:
           else
             BUNDLE_CHANGED=true
           fi
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.force_release }}" == "true" ]]; then
+            SHOULD_PUBLISH=true
+          else
+            SHOULD_PUBLISH=${BUNDLE_CHANGED}
+          fi
           echo "bundle_changed=${BUNDLE_CHANGED}" >> "$GITHUB_OUTPUT"
+          echo "should_publish=${SHOULD_PUBLISH}" >> "$GITHUB_OUTPUT"
           echo "bundle_sha256=${CANDIDATE_SHA}" >> "$GITHUB_OUTPUT"
           echo "Candidate bundle changed: ${BUNDLE_CHANGED} (${CANDIDATE_SHA})"
+          echo "Should publish release: ${SHOULD_PUBLISH}"
 
       - name: Upload verified candidate
-        if: steps.candidate.outputs.bundle_changed == 'true'
+        if: steps.candidate.outputs.should_publish == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: z2m-candidate-${{ steps.deps.outputs.zhc_version }}
@@ -119,7 +132,7 @@ jobs:
   publish:
     needs: validate
     if: >-
-      needs.validate.outputs.bundle_changed == 'true' &&
+      needs.validate.outputs.should_publish == 'true' &&
       github.event_name != 'pull_request' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
