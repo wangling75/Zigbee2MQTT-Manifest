@@ -2,7 +2,7 @@
   "ambiguous_model_count": 126,
   "bundle": "z2m_bundle.bin",
   "bundle_version": "12.0.0",
-  "bytes": 4786615,
+  "bytes": 4786555,
   "capability_summary": {
     "declarative_inbound": true,
     "declarative_outbound": true,
@@ -22,5 +22,5 @@
   "model_hash_collision_count": 0,
   "model_index_count": 5980,
   "search_algorithm": "binary_search_fnv1a_32",
-  "sha256": "568c6bbc82e0c32ab166a8bc38a4f461b6759b338ac351be74cbd4f95a189ca6"
+  "sha256": "f0e14001f27ae784ff8d2aa3295b30f63a0b2dec8b999697c248dd3e9dd308ba"
 }
