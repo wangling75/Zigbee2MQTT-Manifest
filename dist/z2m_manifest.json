@@ -2,7 +2,7 @@
   "ambiguous_model_count": 127,
   "bundle": "z2m_bundle.bin",
   "bundle_version": "12.0.0",
-  "bytes": 4881444,
+  "bytes": 4891555,
   "capability_summary": {
     "declarative_inbound": true,
     "declarative_outbound": true,
@@ -10,17 +10,17 @@
     "runtime": "esp32-declarative-ir",
     "white_label_resolution": true
   },
-  "device_count": 4653,
+  "device_count": 4661,
   "duplicate_fingerprint_count": 22,
-  "fingerprint_constraint_count": 2785,
+  "fingerprint_constraint_count": 2792,
   "fingerprint_hash_collision_count": 0,
-  "fingerprint_index_count": 2785,
+  "fingerprint_index_count": 2792,
   "format": "z2m-binary-bundle-v12",
   "index_entry_size": 32,
   "ir_version": 12,
   "min_firmware": "v12.0.0",
   "model_hash_collision_count": 0,
-  "model_index_count": 6078,
+  "model_index_count": 6089,
   "search_algorithm": "binary_search_fnv1a_32",
-  "sha256": "3efc417880806b58dc8f32ff6b5a68923773ed8337bb18539993e7dc39cf9951"
+  "sha256": "acd63b84cb74240531185e913f3b20c97f02cbd59e068b3226bf379593173f96"
 }
